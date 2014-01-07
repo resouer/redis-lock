@@ -1,18 +1,40 @@
 require 'redis'
 
-class Redis
-  class RedisLock
+module RedisLock
+  class << self
     
     def initialize(name. opts = {})
       @name = name
-      @redis = Redis.new(opts)
+      @redis = Redis.new(opts) # opts is for redis connection
     end
 
     def lock(timeout)
       @success = false
       @value = current_time + timeout + 1
       acquired = @redis.setnx(@name, @value.to_s)
-      # TODO if...else...
+      if acquired == 1
+        sucess = true
+      else
+        old_value = @redis.get(@name).to_s
+        if old_value < current_time
+          get_value = @redis.getset(@name, @value)
+          if get_value == old_value
+            sucess = true
+          else
+            sucess = false
+          end
+        else
+          sucess = false
+        end
+      end
+
+      return sucess
+    end
+
+    def unlock
+      if current_time < @redis.get(@name)
+        @redis.del(@name)
+      end
     end
 
     private
@@ -22,7 +44,7 @@ class Redis
         instant = @redis.time
         Time.at(instant[0], instant[1])
       rescue
-        Time.new # failed to get redis time, use loal time instead
+        Time.new # if failed to get redis time, use loal time instead
       end
     end
 
